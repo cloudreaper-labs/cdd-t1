@@ -7,9 +7,9 @@ terraform {
   }
   backend "azurerm" {
     # storage account + RG injected via -backend-config in the workflow
-    container_name = "tfstate"
-    key            = "app.tfstate"
-    use_oidc       = true
+    container_name   = "tfstate"
+    key              = "app.tfstate"
+    use_oidc         = true
     use_azuread_auth = true
   }
 }
@@ -40,6 +40,14 @@ resource "azurerm_container_app_environment" "env" {
   location                   = data.azurerm_resource_group.me.location
   resource_group_name        = data.azurerm_resource_group.me.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  # Azure adds this profile to every new environment. Declared here so that
+  # every plan does not show a phantom "1 to change" removing it -- students
+  # are told to read the plan, so it must show only their own changes.
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
 }
 
 resource "azurerm_container_app" "app" {
@@ -57,8 +65,8 @@ resource "azurerm_container_app" "app" {
       # busybox httpd serving $GREETING as plaintext; the escaped \$GREETING
       # must reach the container shell literally (runtime env expands it).
       command = ["sh", "-c", "mkdir -p /www && echo \"$GREETING\" > /www/index.html && httpd -f -p 8080 -h /www"]
-      cpu    = 0.25
-      memory = "0.5Gi"
+      cpu     = 0.25
+      memory  = "0.5Gi"
       env {
         name  = "GREETING"
         value = var.greeting

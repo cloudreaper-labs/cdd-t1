@@ -63,15 +63,29 @@ jobs:
         id: plan
         # -lock=false: the plan identity is read-only and can't take the
         # write lease state locking needs; plan doesn't mutate state anyway.
-        run: terraform plan -lock=false -no-color -var "resource_group_name=${{ vars.AZURE_RG }}" 2>&1 | tee plan.txt
+        #
+        # pipefail is load-bearing: without it this step's exit code is tee's,
+        # so a plan that ERRORED showed a green check (found 2026-09-22 when a
+        # 403 on the first team repo passed as success).
+        run: |
+          set -o pipefail
+          terraform plan -lock=false -no-color -var "resource_group_name=${{ vars.AZURE_RG }}" 2>&1 | tee plan.txt
 
       - name: comment plan on PR
+        # Post even when the plan failed: the error is exactly what the PR
+        # author needs to see. The run still ends red, from the step above.
+        if: ${{ !cancelled() && hashFiles('plan.txt') != '' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
         with:
           script: |
             const fs = require('fs');
             const plan = fs.readFileSync('plan.txt', 'utf8');
-            const body = `### terraform plan\n\`\`\`\n${plan.slice(-60000)}\n\`\`\``;
+            const title = process.env.PLAN_OUTCOME === 'success'
+              ? '### terraform plan'
+              : '### terraform plan FAILED -- do not merge; the error is at the bottom';
+            const body = `${title}\n\`\`\`\n${plan.slice(-60000)}\n\`\`\``;
             await github.rest.issues.createComment({
               ...context.repo,
               issue_number: context.issue.number,
