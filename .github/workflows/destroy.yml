@@ -1,0 +1,39 @@
+name: terraform destroy (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_rg:
+        description: "DESTROYS YOUR WHOLE TEAM'S ENVIRONMENT. Type the resource group name (see repo variable AZURE_RG) to confirm"
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+    steps:
+      - name: confirm target
+        env:
+          CONFIRM_RG: ${{ inputs.confirm_rg }}
+          TARGET_RG: ${{ vars.AZURE_RG }}
+        run: |
+          if [[ "$CONFIRM_RG" != "$TARGET_RG" ]]; then
+            echo "confirmation '$CONFIRM_RG' does not match AZURE_RG '$TARGET_RG'; aborting" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.AZURE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_SA }}"
+      - name: terraform destroy
+        run: terraform destroy -auto-approve -var "resource_group_name=${{ vars.AZURE_RG }}"

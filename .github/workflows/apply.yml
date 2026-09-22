@@ -1,0 +1,57 @@
+name: terraform apply
+on:
+  push:
+    branches: [main]
+  # provision.sh dispatches this once the repo variables are set, so the
+  # student's environment is deployed at provision time instead of waiting for
+  # their first push (the initial template-commit run skips via the if: guard).
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    # Skip cleanly until the repo has been provisioned. gh repo create --template
+    # lands an initial commit on main that triggers this workflow BEFORE
+    # provision.sh sets the repo variables, so the first auto-run would other-
+    # wise fail with an empty-config "az login" error that looks like broken
+    # auth. A skipped run (neutral, not red) is the right signal; the student's
+    # first real push runs it for real.
+    if: ${{ vars.AZURE_CLIENT_ID != '' }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+
+      - name: terraform init
+        # Retry through RBAC data-plane propagation: right after provisioning,
+        # the pipeline identity's Storage Blob Data role can take a few minutes
+        # to take effect, so the state backend 403s (AuthorizationPermission-
+        # Mismatch) on the first attempts. Also covers a student who pushes
+        # immediately after their environment is created.
+        env:
+          AZURE_RG: ${{ vars.AZURE_RG }}
+          TFSTATE_SA: ${{ vars.TFSTATE_SA }}
+        run: |
+          set +e
+          for attempt in $(seq 1 12); do
+            terraform init \
+              -backend-config="resource_group_name=${AZURE_RG}" \
+              -backend-config="storage_account_name=${TFSTATE_SA}" && exit 0
+            echo "terraform init failed (attempt ${attempt}/12) -- likely storage RBAC propagation; retrying in 30s" >&2
+            sleep 30
+          done
+          echo "terraform init still failing after retries" >&2; exit 1
+
+      - name: terraform apply
+        run: terraform apply -auto-approve -var "resource_group_name=${{ vars.AZURE_RG }}"
+
+      - name: show app url
+        run: terraform output app_url

@@ -1,0 +1,79 @@
+# SECURITY: this job checks out PR-authored code and runs `terraform plan`,
+# which executes arbitrary code from the PR (external data sources, module
+# sources). It authenticates as the Reader-only plan identity, but its safety
+# against UNTRUSTED PRs comes from GitHub, NOT from this repo: a pull_request
+# run from a FORK is never issued an OIDC token (the id-token permission below
+# is dropped for it), so it cannot become the plan identity. It may still run,
+# credential-less, and fail to reach Azure -- course module 03 has students
+# watch exactly that, so do not "tidy" fork PRs away with an `if:`.
+#
+# The trigger is what makes this true. `pull_request_target` runs in the BASE
+# repo's context with a token, and would hand that token to PR-authored code:
+# never switch to it. See "GitHub org security requirements" in CLAUDE.md
+# before changing this trigger or the permissions.
+name: terraform plan
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write      # OIDC token for Azure federation
+  contents: read
+  pull-requests: write # plan comment
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    # Skip until provisioned (see apply.yml): the repo's variables are set by
+    # provision.sh after the repo is created, so an early PR would otherwise run
+    # with empty config and fail as a false "auth" error.
+    if: ${{ vars.AZURE_CLIENT_ID_PLAN != '' }}
+    env:
+      # A pull_request run authenticates as the plan-only identity (Reader +
+      # Storage Blob Data Reader on the RG, see scripts/provision.sh) rather
+      # than the apply/destroy identity, so a PR alone never gets write
+      # access to Azure -- only a push to main (apply.yml) does.
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PLAN }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+
+      - name: terraform init
+        # Retry through RBAC data-plane propagation (see apply.yml): the plan
+        # identity's Storage Blob Data Reader role can lag a few minutes, 403ing
+        # the state backend on a PR opened right after provisioning.
+        env:
+          AZURE_RG: ${{ vars.AZURE_RG }}
+          TFSTATE_SA: ${{ vars.TFSTATE_SA }}
+        run: |
+          set +e
+          for attempt in $(seq 1 12); do
+            terraform init \
+              -backend-config="resource_group_name=${AZURE_RG}" \
+              -backend-config="storage_account_name=${TFSTATE_SA}" && exit 0
+            echo "terraform init failed (attempt ${attempt}/12) -- likely storage RBAC propagation; retrying in 30s" >&2
+            sleep 30
+          done
+          echo "terraform init still failing after retries" >&2; exit 1
+
+      - name: terraform plan
+        id: plan
+        # -lock=false: the plan identity is read-only and can't take the
+        # write lease state locking needs; plan doesn't mutate state anyway.
+        run: terraform plan -lock=false -no-color -var "resource_group_name=${{ vars.AZURE_RG }}" 2>&1 | tee plan.txt
+
+      - name: comment plan on PR
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('plan.txt', 'utf8');
+            const body = `### terraform plan\n\`\`\`\n${plan.slice(-60000)}\n\`\`\``;
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body
+            });

@@ -1,0 +1,20 @@
+# Local Terraform provider cache and state -- never publish these.
+# NOTE: .terraform.lock.hcl IS committed (pinned provider checksums); only the
+# .terraform/ working directory and state/plan artifacts are ignored.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Terraform variable files that may hold secrets (this course passes vars on
+# the CLI / via repo variables, so none should exist -- but don't leak them).
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
