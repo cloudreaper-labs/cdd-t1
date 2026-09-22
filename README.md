@@ -34,6 +34,11 @@ Turn on GitHub's private commit email first:
 
 Never commit a password, key, or token. The pipeline doesn't need one.
 
+The workflow logs and the plan comments are public too. Terraform hides values
+it knows are secret (they show as `(sensitive value)`), so never undo that with
+`nonsensitive()`, and never `echo` a secret in a workflow step. Anything a log
+prints, anyone can read.
+
 ## Your first change, start to finish
 
 1. **Agree who's driving.** If five people edit the same line at once, the
