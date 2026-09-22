@@ -15,6 +15,6 @@ variable "image" {
 
 variable "greeting" {
   type        = string
-  default     = "hello from v1"
+  default     = "hello from the student test"
   description = "Change me in a PR to watch the pipeline work."
 }
