@@ -69,6 +69,25 @@ The very first request after a quiet spell can take several seconds. The app
 scales to zero when nobody is using it, so it has to start up first. That's
 expected, not a bug.
 
+## Looking at it in the Azure portal
+
+Optional: everything above works without it. To see your team's resources:
+
+1. Accept the Azure invitation email your instructor's setup sent you.
+2. Sign in with the **link in this repo's About box** (top right of the repo
+   page), **not** plain `portal.azure.com`.
+3. Use the email address you were invited with. If it isn't a Microsoft
+   account, Azure emails you a one-time code instead of asking for a password.
+
+You'll see one resource group: your team's.
+
+| If you see | It means |
+|---|---|
+| "This account doesn't exist" | You used plain `portal.azure.com`. Use the About-box link. |
+| Signed in, but no resources | Top right → **Switch directory**, pick the class's directory. |
+| "You don't have permission" changing the resource group's tags | Expected. The expiry date and tags are locked. |
+| Something you changed in the portal disappeared | Expected. The next apply puts everything back to what the code says. Make lasting changes through a pull request. |
+
 ## What's in this repo
 
 | File | What it does |
