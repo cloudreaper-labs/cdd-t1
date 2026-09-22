@@ -55,6 +55,9 @@ resource "azurerm_container_app" "app" {
   container_app_environment_id = azurerm_container_app_environment.env.id
   resource_group_name          = data.azurerm_resource_group.me.name
   revision_mode                = "Multiple" # enables blue/green traffic splitting
+  # Azure places the app on the environment's Consumption profile; say so, or
+  # every plan shows a phantom change removing it (see the environment above).
+  workload_profile_name = "Consumption"
 
   template {
     min_replicas = 0 # scale to zero: costs nothing while nobody is looking
